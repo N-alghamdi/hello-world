@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "start": "python3 -m http.server 4173",
+    "build": "node --check src/app.js",
+    "preview": "python3 -m http.server 4173"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
