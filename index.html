@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Makkah Water Leak Priority Dashboard</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQdB0xDVfB6TLLTzviu2RSp5rA8PvsA=" crossorigin="" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">Makkah smart water network</p>
+          <h1>Leak prediction and neighbourhood priority map</h1>
+          <p class="hero-copy">
+            Upload a tabular pipe dataset, run the included XGBoost leak model locally in your browser, enrich neighbourhoods with nearby hotel pressure, and colour Makkah areas by response priority.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <label class="upload-card" for="datasetInput">
+            <span>Upload CSV dataset</span>
+            <strong id="fileName">Choose file</strong>
+            <input id="datasetInput" type="file" accept=".csv,text/csv" />
+          </label>
+          <button id="loadSampleBtn" type="button">Load sample CSV</button>
+          <button id="runModelBtn" type="button" disabled>Run prediction</button>
+          <button id="hotelBtn" type="button" disabled>Fetch hotel counts</button>
+        </div>
+      </section>
+
+      <section class="status-grid">
+        <article class="metric panel high"><span>High priority</span><strong id="highCount">0</strong></article>
+        <article class="metric panel medium"><span>Medium priority</span><strong id="mediumCount">0</strong></article>
+        <article class="metric panel low"><span>Less priority</span><strong id="lowCount">0</strong></article>
+        <article class="metric panel"><span>Rows analysed</span><strong id="rowCount">0</strong></article>
+      </section>
+
+      <section class="workspace">
+        <aside class="panel sidebar">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Neighbourhoods</p>
+              <h2>Priority list</h2>
+            </div>
+            <button id="resetMapBtn" type="button">Reset map</button>
+          </div>
+          <div class="legend" aria-label="Map legend">
+            <span><i class="swatch high-bg"></i>High</span>
+            <span><i class="swatch medium-bg"></i>Medium</span>
+            <span><i class="swatch low-bg"></i>Less</span>
+          </div>
+          <div id="neighbourhoodList" class="neighbourhood-list empty">Upload a dataset or load the sample to begin.</div>
+        </aside>
+
+        <section class="panel map-panel">
+          <div id="map"></div>
+          <div id="selectedStats" class="selected-card">
+            <p class="eyebrow">Selected neighbourhood</p>
+            <h2>Click a neighbourhood</h2>
+            <p>Interactive statistics will appear here after prediction.</p>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel details">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Data quality and model output</p>
+            <h2>Insights</h2>
+          </div>
+          <button id="downloadBtn" type="button" disabled>Download results CSV</button>
+        </div>
+        <div id="insights" class="insights">
+          <p>No analysis has been run yet.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
