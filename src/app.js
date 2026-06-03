@@ -1,7 +1,8 @@
 const SAMPLE_FILE = './Excel_Table_1_modified_similar_leaks_needed_web%20.csv';
 const MODEL_FILE = './xgboost_leak_model.json';
 const BALANCE_FILE = './balance_check%20(1).csv';
-const MAKKAH_CENTER = [21.4225, 39.8262];
+const MAKKAH_CENTER = [39.8262, 21.4225];
+const MAKKAH_BOUNDS = [[39.55, 21.22], [40.08, 21.62]];
 const FEATURE_ORDER = [
   'MATERIAL_1_DI', 'MATERIAL_1_HDPE', 'MATERIAL_1_STEEL', 'MATERIAL_1_UPVC',
   'MATERIAL_1_OTHER', 'Class_name_Roads', 'Class_name_Buildings', 'Class_name_Service',
@@ -9,15 +10,17 @@ const FEATURE_ORDER = [
   'Name_known_south', 'Name_known_west', 'Name_known_other', 'asset_active',
   'DIAMETER_1', 'pipe_age', 'NEW_REL_PR'
 ];
+const EMPTY_GEOJSON = { type: 'FeatureCollection', features: [] };
 
 const state = {
   rows: [],
   model: null,
   predictions: [],
   neighbourhoods: new Map(),
-  layers: new Map(),
   selectedName: null,
   balanceNames: new Set(),
+  mapReady: false,
+  lastGeoJson: EMPTY_GEOJSON,
 };
 
 const el = {
@@ -25,7 +28,6 @@ const el = {
   fileName: document.querySelector('#fileName'),
   loadSampleBtn: document.querySelector('#loadSampleBtn'),
   runModelBtn: document.querySelector('#runModelBtn'),
-  hotelBtn: document.querySelector('#hotelBtn'),
   resetMapBtn: document.querySelector('#resetMapBtn'),
   downloadBtn: document.querySelector('#downloadBtn'),
   highCount: document.querySelector('#highCount'),
@@ -37,27 +39,96 @@ const el = {
   insights: document.querySelector('#insights'),
 };
 
-const map = L.map('map', { zoomControl: true }).setView(MAKKAH_CENTER, 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap contributors',
-}).addTo(map);
+const map = new maplibregl.Map({
+  container: 'map',
+  center: MAKKAH_CENTER,
+  zoom: 11.4,
+  minZoom: 10,
+  maxZoom: 17.5,
+  maxBounds: MAKKAH_BOUNDS,
+  pitch: 28,
+  bearing: -12,
+  attributionControl: false,
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors',
+      },
+    },
+    layers: [
+      { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.05 } },
+    ],
+  },
+});
+
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+map.on('load', () => {
+  state.mapReady = true;
+  map.addSource('priority-areas', { type: 'geojson', data: EMPTY_GEOJSON });
+  map.addLayer({
+    id: 'priority-fills',
+    type: 'fill',
+    source: 'priority-areas',
+    paint: {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.62, 0.36],
+    },
+  });
+  map.addLayer({
+    id: 'priority-outlines',
+    type: 'line',
+    source: 'priority-areas',
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 4, 2],
+      'line-opacity': 0.9,
+    },
+  });
+  map.addLayer({
+    id: 'priority-labels',
+    type: 'symbol',
+    source: 'priority-areas',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-size': 13,
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': '#12211f',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 1.5,
+    },
+  });
+  map.on('click', 'priority-fills', (event) => {
+    const feature = event.features?.[0];
+    if (feature?.properties?.name) focusNeighbourhood(feature.properties.name);
+  });
+  map.on('mouseenter', 'priority-fills', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'priority-fills', () => { map.getCanvas().style.cursor = ''; });
+  updateMapSource();
+});
 
 const knownNeighbourhoods = {
-  'حي الشرائع': [21.478, 39.955], 'الشرائع': [21.478, 39.955],
-  'حي السلام': [21.408, 39.88], 'السلام': [21.408, 39.88],
-  'حي التروية': [21.438, 39.885], 'التروية': [21.438, 39.885],
-  'حي الكوثر': [21.463, 39.895], 'الكوثر': [21.463, 39.895],
-  'حي أجياد': [21.414, 39.826], 'حي اجیاد': [21.414, 39.826],
-  'حي العزيزية': [21.405, 39.879], 'حي العوالي': [21.381, 39.876],
-  'حي النزهة': [21.447, 39.792], 'حي الزاهر': [21.441, 39.806],
-  'حي الشوقية': [21.373, 39.787], 'حي بطحاء قريش': [21.366, 39.825],
-  'حي الخالدية': [21.397, 39.843], 'حي المسفلة': [21.409, 39.811],
-  'حي جرول': [21.428, 39.811], 'حي الحمراء': [21.435, 39.783],
-  'حي البحيرات': [21.505, 39.75], 'حي ولي العهد': [21.33, 39.73],
+  'حي الشرائع': [39.955, 21.478], 'الشرائع': [39.955, 21.478],
+  'حي السلام': [39.88, 21.408], 'السلام': [39.88, 21.408],
+  'حي التروية': [39.885, 21.438], 'التروية': [39.885, 21.438],
+  'حي الكوثر': [39.895, 21.463], 'الكوثر': [39.895, 21.463],
+  'حي أجياد': [39.826, 21.414], 'حي اجیاد': [39.826, 21.414],
+  'حي العزيزية': [39.879, 21.405], 'حي العوالي': [39.876, 21.381],
+  'حي النزهة': [39.792, 21.447], 'حي الزاهر': [39.806, 21.441],
+  'حي الشوقية': [39.787, 21.373], 'حي بطحاء قريش': [39.825, 21.366],
+  'حي الخالدية': [39.843, 21.397], 'حي المسفلة': [39.811, 21.409],
+  'حي جرول': [39.811, 21.428], 'حي الحمراء': [39.783, 21.435],
+  'حي البحيرات': [39.75, 21.505], 'حي ولي العهد': [39.73, 21.33],
 };
 
-const fallbackHotelCounts = {
+const estimatedHotelCounts = {
   'حي أجياد': 160, 'حي اجیاد': 160, 'حي المسفلة': 105, 'حي العزيزية': 95,
   'حي جرول': 70, 'حي الشرائع': 18, 'حي السلام': 24, 'حي التروية': 14, 'حي الكوثر': 10,
 };
@@ -90,8 +161,7 @@ el.loadSampleBtn.addEventListener('click', async () => {
 });
 
 el.runModelBtn.addEventListener('click', runPrediction);
-el.hotelBtn.addEventListener('click', enrichHotelsFromOverpass);
-el.resetMapBtn.addEventListener('click', () => map.setView(MAKKAH_CENTER, 12));
+el.resetMapBtn.addEventListener('click', resetToMakkah);
 el.downloadBtn.addEventListener('click', downloadResults);
 
 async function loadCsvText(text) {
@@ -99,10 +169,12 @@ async function loadCsvText(text) {
   state.rows = rows;
   state.predictions = [];
   state.neighbourhoods.clear();
-  clearMap();
+  state.selectedName = null;
+  state.lastGeoJson = EMPTY_GEOJSON;
+  updateMapSource();
+  resetToMakkah();
   el.rowCount.textContent = rows.length.toLocaleString();
   el.runModelBtn.disabled = !rows.length || !state.model;
-  el.hotelBtn.disabled = true;
   el.downloadBtn.disabled = true;
   el.list.className = 'neighbourhood-list empty';
   el.list.textContent = rows.length ? `${rows.length.toLocaleString()} rows loaded. Press “Run prediction”.` : 'No rows found in the CSV.';
@@ -129,7 +201,6 @@ function runPrediction() {
   });
   buildNeighbourhoodStats();
   renderAll();
-  el.hotelBtn.disabled = false;
   el.downloadBtn.disabled = false;
 }
 
@@ -140,7 +211,7 @@ function buildNeighbourhoodStats() {
     if (!state.neighbourhoods.has(name)) {
       state.neighbourhoods.set(name, {
         name, rows: 0, predictedLeaks: 0, avgProbability: 0, avgDiameter: 0, maxDiameter: 0,
-        hotelCount: getFallbackHotelCount(name), coords: resolveCoords(name, row), priorityScore: 0, priority: 'low', reasons: [],
+        hotelCount: getEstimatedHotelCount(name), coords: resolveCoords(name, row), priorityScore: 0, priority: 'low', reasons: [],
       });
     }
     const stat = state.neighbourhoods.get(name);
@@ -149,7 +220,7 @@ function buildNeighbourhoodStats() {
     stat.avgProbability += row.leak_probability;
     stat.avgDiameter += Number.isFinite(row.DIAMETER_1) ? row.DIAMETER_1 : 0;
     stat.maxDiameter = Math.max(stat.maxDiameter, Number.isFinite(row.DIAMETER_1) ? row.DIAMETER_1 : 0);
-    if (Number.isFinite(row.Y) && Number.isFinite(row.X)) stat.coords = [row.Y, row.X];
+    if (Number.isFinite(row.Y) && Number.isFinite(row.X)) stat.coords = clampToMakkah([row.X, row.Y]);
   }
   [...state.neighbourhoods.values()].forEach(scoreNeighbourhood);
 }
@@ -160,12 +231,12 @@ function scoreNeighbourhood(stat) {
   const leakRate = stat.rows ? stat.predictedLeaks / stat.rows : 0;
   const hotelPressure = Math.min(stat.hotelCount / 75, 1);
   const diameterPressure = Math.min(stat.avgDiameter / 500, 1);
-  stat.priorityScore = (stat.avgProbability * 0.52) + (hotelPressure * 0.28) + (diameterPressure * 0.20) + (leakRate * 0.12);
+  stat.priorityScore = (stat.avgProbability * 0.50) + (hotelPressure * 0.30) + (diameterPressure * 0.20) + (leakRate * 0.10);
   stat.priority = stat.priorityScore >= 0.66 ? 'high' : stat.priorityScore >= 0.38 ? 'medium' : 'low';
   stat.reasons = [
     `${percent(stat.avgProbability)} average leak probability`,
     `${Math.round(stat.avgDiameter || 0)} mm average pipe diameter`,
-    `${stat.hotelCount} nearby hotels/accommodation places`,
+    `${stat.hotelCount} estimated hotels/accommodation places in the area`,
   ];
 }
 
@@ -218,38 +289,12 @@ function featureVector(row) {
   return values;
 }
 
-async function enrichHotelsFromOverpass() {
-  el.hotelBtn.disabled = true;
-  el.hotelBtn.textContent = 'Fetching hotels...';
-  const stats = [...state.neighbourhoods.values()];
-  try {
-    await Promise.all(stats.map(async (stat) => {
-      stat.hotelCount = await fetchHotelCount(stat.coords);
-      scoreNeighbourhood(stat);
-    }));
-    renderInsights('Live accommodation counts were fetched from the public OpenStreetMap Overpass API. No API key is stored in the code.');
-  } catch (error) {
-    renderInsights(`Hotel API failed, so fallback estimates remain active: ${error.message}`);
-  } finally {
-    renderAll();
-    el.hotelBtn.textContent = 'Refresh hotel counts';
-    el.hotelBtn.disabled = false;
-  }
-}
-
-async function fetchHotelCount([lat, lon]) {
-  const query = `[out:json][timeout:18];(node["tourism"~"hotel|apartment|guest_house|hostel"](around:1800,${lat},${lon});way["tourism"~"hotel|apartment|guest_house|hostel"](around:1800,${lat},${lon}););out center;`;
-  const response = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
-  if (!response.ok) throw new Error(`Overpass returned ${response.status}`);
-  const data = await response.json();
-  return new Set((data.elements || []).map((item) => item.id)).size;
-}
-
 function renderAll() {
   renderMetrics();
   renderList();
   renderMap();
-  renderSelected(state.selectedName || [...state.neighbourhoods.keys()][0]);
+  renderSelected(state.selectedName || sortedStats()[0]?.name);
+  renderInsights('Prediction completed. Hotel pressure is estimated from each Makkah neighbourhood name and combined with pipe diameter in the priority score.');
 }
 
 function renderMetrics() {
@@ -278,25 +323,66 @@ function renderList() {
 }
 
 function renderMap() {
-  clearMap();
-  sortedStats().forEach((stat) => {
-    const color = priorityColor(stat.priority);
-    const radius = Math.max(520, Math.min(1700, 480 + stat.rows * 14 + stat.hotelCount * 5));
-    const layer = L.circle(stat.coords, { radius, color, weight: 3, fillColor: color, fillOpacity: 0.36 }).addTo(map);
-    layer.bindPopup(popupHtml(stat));
-    layer.on('click', () => focusNeighbourhood(stat.name));
-    state.layers.set(stat.name, layer);
-  });
-  if (state.layers.size) {
-    const group = L.featureGroup([...state.layers.values()]);
-    map.fitBounds(group.getBounds().pad(0.2));
+  state.lastGeoJson = makePriorityGeoJson(sortedStats());
+  updateMapSource();
+  fitMapToStats();
+}
+
+function updateMapSource() {
+  if (!state.mapReady) return;
+  const source = map.getSource('priority-areas');
+  if (source) source.setData(state.lastGeoJson);
+}
+
+function makePriorityGeoJson(stats) {
+  return {
+    type: 'FeatureCollection',
+    features: stats.map((stat, index) => ({
+      type: 'Feature',
+      id: hashCode(stat.name),
+      properties: {
+        name: stat.name,
+        priority: stat.priority,
+        color: priorityColor(stat.priority),
+        priorityScore: stat.priorityScore,
+        rows: stat.rows,
+        predictedLeaks: stat.predictedLeaks,
+        sort: index,
+      },
+      geometry: makeNeighbourhoodPolygon(stat),
+    })),
+  };
+}
+
+function makeNeighbourhoodPolygon(stat) {
+  const [lng, lat] = stat.coords;
+  const size = Math.max(0.009, Math.min(0.026, 0.009 + stat.rows * 0.00016 + stat.hotelCount * 0.00005));
+  const points = [];
+  for (let step = 0; step <= 32; step++) {
+    const angle = (Math.PI * 2 * step) / 32;
+    const wobble = 0.82 + (((hashCode(stat.name) + step * 17) % 9) / 30);
+    points.push([lng + Math.cos(angle) * size * wobble, lat + Math.sin(angle) * size * 0.72 * wobble]);
   }
+  return { type: 'Polygon', coordinates: [points.map(clampToMakkah)] };
+}
+
+function fitMapToStats() {
+  const stats = sortedStats();
+  if (!stats.length) return resetToMakkah();
+  const bounds = new maplibregl.LngLatBounds();
+  stats.forEach((stat) => bounds.extend(stat.coords));
+  map.fitBounds(bounds, { padding: 95, maxZoom: 13.5, duration: 700 });
 }
 
 function renderSelected(name) {
   const stat = state.neighbourhoods.get(name);
   if (!stat) return;
+  const previousName = state.selectedName;
   state.selectedName = name;
+  if (state.mapReady) {
+    if (previousName && previousName !== name) map.setFeatureState({ source: 'priority-areas', id: hashCode(previousName) }, { selected: false });
+    map.setFeatureState({ source: 'priority-areas', id: hashCode(name) }, { selected: true });
+  }
   el.selectedStats.innerHTML = `
     <p class="eyebrow">Selected neighbourhood</p>
     <h2>${escapeHtml(stat.name)}</h2>
@@ -305,7 +391,7 @@ function renderSelected(name) {
       <div class="stat"><span>Priority score</span><strong>${percent(stat.priorityScore)}</strong></div>
       <div class="stat"><span>Predicted leaks</span><strong>${stat.predictedLeaks}/${stat.rows}</strong></div>
       <div class="stat"><span>Avg probability</span><strong>${percent(stat.avgProbability)}</strong></div>
-      <div class="stat"><span>Hotels nearby</span><strong>${stat.hotelCount}</strong></div>
+      <div class="stat"><span>Estimated hotels</span><strong>${stat.hotelCount}</strong></div>
       <div class="stat"><span>Avg diameter</span><strong>${Math.round(stat.avgDiameter || 0)} mm</strong></div>
       <div class="stat"><span>Max diameter</span><strong>${Math.round(stat.maxDiameter || 0)} mm</strong></div>
     </div>
@@ -317,9 +403,11 @@ function focusNeighbourhood(name) {
   const stat = state.neighbourhoods.get(name);
   if (!stat) return;
   renderSelected(name);
-  map.flyTo(stat.coords, 15, { duration: 0.7 });
-  const layer = state.layers.get(name);
-  if (layer) layer.openPopup();
+  map.flyTo({ center: stat.coords, zoom: 14.4, pitch: 34, bearing: -10, duration: 750 });
+  new maplibregl.Popup({ closeButton: true, closeOnClick: true, offset: 12 })
+    .setLngLat(stat.coords)
+    .setHTML(popupHtml(stat))
+    .addTo(map);
 }
 
 function renderInsights(message) {
@@ -335,8 +423,8 @@ function renderInsights(message) {
     <div class="insight"><strong>Top priority</strong><br>${escapeHtml(top.name)} has a ${percent(top.priorityScore)} combined score.</div>
     <div class="insight"><strong>Pipe diameter</strong><br>Average uploaded diameter is ${Math.round(avgDiameter || 0)} mm.</div>
     <div class="insight"><strong>Data readiness</strong><br>${missingDates} rows have missing or invalid installation dates.</div>
-    <div class="insight"><strong>Hotel factor</strong><br>Hotels are retrieved from Overpass when available; otherwise local Makkah fallback estimates are used.</div>
-    <div class="insight"><strong>Model features</strong><br>${FEATURE_ORDER.slice(16).join(', ')} plus encoded material/class/location indicators.</div>
+    <div class="insight"><strong>Hotel factor</strong><br>Hotel pressure is estimated per Makkah neighbourhood and used only as a priority-scoring criterion.</div>
+    <div class="insight"><strong>Map scope</strong><br>The MapLibre map is constrained to Makkah city bounds so it cannot drift to other countries.</div>
     <div class="insight"><strong>Status</strong><br>${escapeHtml(message || 'Prediction completed.')}</div>`;
 }
 
@@ -345,11 +433,8 @@ function popupHtml(stat) {
     <div><b>${priorityLabel(stat.priority)} priority</b></div>
     <div>Score: ${percent(stat.priorityScore)}</div>
     <div>Predicted leaks: ${stat.predictedLeaks}/${stat.rows}</div>
-    <div>Hotels: ${stat.hotelCount}</div>
-    <button type="button" onclick="document.dispatchEvent(new CustomEvent('focus-neighbourhood',{detail:'${escapeAttr(stat.name)}'}))">Open statistics</button>`;
+    <div>Estimated hotels: ${stat.hotelCount}</div>`;
 }
-
-document.addEventListener('focus-neighbourhood', (event) => focusNeighbourhood(event.detail));
 
 function downloadResults() {
   const headers = [...Object.keys(state.predictions[0] || {}), 'priority'];
@@ -363,7 +448,7 @@ function downloadResults() {
   URL.revokeObjectURL(url);
 }
 
-function clearMap() { state.layers.forEach((layer) => layer.remove()); state.layers.clear(); }
+function resetToMakkah() { map.fitBounds(MAKKAH_BOUNDS, { padding: 35, duration: 650 }); }
 function sortedStats() { return [...state.neighbourhoods.values()].sort((a, b) => b.priorityScore - a.priorityScore || b.rows - a.rows); }
 function priorityColor(priority) { return priority === 'high' ? '#dc2626' : priority === 'medium' ? '#f59e0b' : '#22a06b'; }
 function priorityLabel(priority) { return priority === 'high' ? 'High' : priority === 'medium' ? 'Medium' : 'Less'; }
@@ -375,18 +460,25 @@ function toNumber(value) { const number = Number.parseFloat(String(value ?? '').
 function calculatePipeAge(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? NaN : new Date().getFullYear() - date.getFullYear(); }
 
 function resolveCoords(name, row) {
-  if (Number.isFinite(row.Y) && Number.isFinite(row.X)) return [row.Y, row.X];
+  if (Number.isFinite(row.Y) && Number.isFinite(row.X)) return clampToMakkah([row.X, row.Y]);
   if (knownNeighbourhoods[name]) return knownNeighbourhoods[name];
   const clean = name.replace(/^حي\s*/, '');
   if (knownNeighbourhoods[clean]) return knownNeighbourhoods[clean];
   const offset = hashCode(name) % 1000;
   const angle = (offset / 1000) * Math.PI * 2;
   const distance = 0.025 + ((offset % 80) / 1000);
-  return [MAKKAH_CENTER[0] + Math.sin(angle) * distance, MAKKAH_CENTER[1] + Math.cos(angle) * distance];
+  return clampToMakkah([MAKKAH_CENTER[0] + Math.cos(angle) * distance, MAKKAH_CENTER[1] + Math.sin(angle) * distance]);
 }
 
-function getFallbackHotelCount(name) {
-  if (fallbackHotelCounts[name] !== undefined) return fallbackHotelCounts[name];
+function clampToMakkah([lng, lat]) {
+  return [
+    Math.min(Math.max(lng, MAKKAH_BOUNDS[0][0] + 0.004), MAKKAH_BOUNDS[1][0] - 0.004),
+    Math.min(Math.max(lat, MAKKAH_BOUNDS[0][1] + 0.004), MAKKAH_BOUNDS[1][1] - 0.004),
+  ];
+}
+
+function getEstimatedHotelCount(name) {
+  if (estimatedHotelCounts[name] !== undefined) return estimatedHotelCounts[name];
   if (/أجياد|اجياد|المسفلة|جرول|العزيزية|الحرم/.test(name)) return 80;
   if (/الشرائع|السلام|العوالي|الشوقية|الخالدية/.test(name)) return 22;
   return 8 + (hashCode(name) % 18);
@@ -437,5 +529,4 @@ function describeColumns(rows) {
 
 function hashCode(value) { return Math.abs([...String(value)].reduce((hash, char) => ((hash << 5) - hash) + char.charCodeAt(0), 0)); }
 function escapeHtml(value) { return String(value).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char])); }
-function escapeAttr(value) { return escapeHtml(value).replace(/'/g, '&#39;'); }
 function csvCell(value) { const text = String(value ?? ''); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
