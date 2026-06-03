@@ -39,6 +39,44 @@ const el = {
   insights: document.querySelector('#insights'),
 };
 
+const MAKKAH_BASE_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      properties: { name: 'Makkah city operating area' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [39.55, 21.22], [40.08, 21.22], [40.08, 21.62], [39.55, 21.62], [39.55, 21.22],
+        ]],
+      },
+    },
+  ],
+};
+
+const MAKKAH_ROADS_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [
+    { type: 'Feature', properties: { kind: 'major' }, geometry: { type: 'LineString', coordinates: [[39.63, 21.35], [39.72, 21.38], [39.826, 21.422], [39.93, 21.45], [40.03, 21.50]] } },
+    { type: 'Feature', properties: { kind: 'major' }, geometry: { type: 'LineString', coordinates: [[39.77, 21.57], [39.80, 21.50], [39.826, 21.422], [39.86, 21.36], [39.90, 21.28]] } },
+    { type: 'Feature', properties: { kind: 'major' }, geometry: { type: 'LineString', coordinates: [[39.58, 21.48], [39.70, 21.46], [39.826, 21.422], [39.94, 21.40], [40.06, 21.36]] } },
+    { type: 'Feature', properties: { kind: 'local' }, geometry: { type: 'LineString', coordinates: [[39.66, 21.30], [39.75, 21.34], [39.88, 21.34], [39.99, 21.31]] } },
+    { type: 'Feature', properties: { kind: 'local' }, geometry: { type: 'LineString', coordinates: [[39.62, 21.55], [39.73, 21.52], [39.87, 21.52], [40.02, 21.56]] } },
+    { type: 'Feature', properties: { kind: 'local' }, geometry: { type: 'LineString', coordinates: [[39.69, 21.25], [39.74, 21.37], [39.78, 21.49], [39.81, 21.60]] } },
+    { type: 'Feature', properties: { kind: 'local' }, geometry: { type: 'LineString', coordinates: [[39.94, 21.24], [39.91, 21.35], [39.89, 21.47], [39.86, 21.60]] } },
+  ],
+};
+
+const MAKKAH_LANDMARKS_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [
+    { type: 'Feature', properties: { name: 'Al Haram' }, geometry: { type: 'Point', coordinates: [39.8262, 21.4225] } },
+    { type: 'Feature', properties: { name: 'Mina' }, geometry: { type: 'Point', coordinates: [39.891, 21.413] } },
+    { type: 'Feature', properties: { name: 'Arafat' }, geometry: { type: 'Point', coordinates: [39.984, 21.355] } },
+  ],
+};
+
 const map = new maplibregl.Map({
   container: 'map',
   center: MAKKAH_CENTER,
@@ -46,28 +84,37 @@ const map = new maplibregl.Map({
   minZoom: 10,
   maxZoom: 17.5,
   maxBounds: MAKKAH_BOUNDS,
-  pitch: 28,
-  bearing: -12,
+  pitch: 0,
+  bearing: 0,
   attributionControl: false,
   style: {
     version: 8,
     sources: {
-      osm: {
-        type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '© OpenStreetMap contributors',
-      },
+      'makkah-base': { type: 'geojson', data: MAKKAH_BASE_GEOJSON },
+      'makkah-roads': { type: 'geojson', data: MAKKAH_ROADS_GEOJSON },
+      'makkah-landmarks': { type: 'geojson', data: MAKKAH_LANDMARKS_GEOJSON },
     },
     layers: [
-      { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.05 } },
+      { id: 'background', type: 'background', paint: { 'background-color': '#dbe9e4' } },
+      { id: 'makkah-area-fill', type: 'fill', source: 'makkah-base', paint: { 'fill-color': '#f3f7f3', 'fill-opacity': 1 } },
+      { id: 'makkah-area-outline', type: 'line', source: 'makkah-base', paint: { 'line-color': '#9bbdb5', 'line-width': 2 } },
+      { id: 'makkah-local-roads', type: 'line', source: 'makkah-roads', filter: ['==', ['get', 'kind'], 'local'], paint: { 'line-color': '#c8d8d2', 'line-width': 3, 'line-opacity': 0.85 } },
+      { id: 'makkah-major-roads', type: 'line', source: 'makkah-roads', filter: ['==', ['get', 'kind'], 'major'], paint: { 'line-color': '#adc8bf', 'line-width': 6, 'line-opacity': 0.9 } },
+      { id: 'makkah-major-roads-core', type: 'line', source: 'makkah-roads', filter: ['==', ['get', 'kind'], 'major'], paint: { 'line-color': '#ffffff', 'line-width': 2, 'line-opacity': 0.95 } },
+      { id: 'makkah-landmark-dots', type: 'circle', source: 'makkah-landmarks', paint: { 'circle-color': '#0f766e', 'circle-radius': 5, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } },
+      { id: 'makkah-landmark-labels', type: 'symbol', source: 'makkah-landmarks', layout: { 'text-field': ['get', 'name'], 'text-size': 12, 'text-offset': [0, 1.2], 'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'] }, paint: { 'text-color': '#31534d', 'text-halo-color': '#ffffff', 'text-halo-width': 1.3 } },
     ],
   },
 });
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+const mapResizeObserver = new ResizeObserver(() => map.resize());
+mapResizeObserver.observe(document.querySelector('#map'));
+window.addEventListener('load', () => map.resize());
+window.addEventListener('resize', () => map.resize());
 map.on('load', () => {
+  map.resize();
   state.mapReady = true;
   map.addSource('priority-areas', { type: 'geojson', data: EMPTY_GEOJSON });
   map.addLayer({
@@ -112,6 +159,7 @@ map.on('load', () => {
   map.on('mouseenter', 'priority-fills', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'priority-fills', () => { map.getCanvas().style.cursor = ''; });
   updateMapSource();
+  resetToMakkah();
 });
 
 const knownNeighbourhoods = {
@@ -323,6 +371,7 @@ function renderList() {
 }
 
 function renderMap() {
+  map.resize();
   state.lastGeoJson = makePriorityGeoJson(sortedStats());
   updateMapSource();
   fitMapToStats();

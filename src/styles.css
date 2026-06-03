@@ -70,8 +70,9 @@ h2 { font-size: 1.25rem; }
 .badge { color: white; border-radius: 999px; padding: 0.18rem 0.55rem; font-size: 0.74rem; }
 .badge.high-bg, .priority-high { background: var(--red); }.badge.medium-bg, .priority-medium { background: var(--orange); }.badge.low-bg, .priority-low { background: var(--green); }
 .item-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; color: var(--muted); font-size: 0.82rem; }
-.map-panel { position: relative; overflow: hidden; min-height: 710px; }
-#map { height: 710px; width: 100%; z-index: 1; }
+.map-panel { position: relative; overflow: hidden; min-height: 710px; background: #dbe9e4; }
+#map { position: absolute; inset: 0; height: 100%; width: 100%; min-height: 710px; z-index: 1; background: #dbe9e4; }
+.maplibregl-canvas { display: block; width: 100% !important; height: 100% !important; }
 .selected-card { position: absolute; right: 1rem; top: 1rem; z-index: 500; width: min(390px, calc(100% - 2rem)); background: rgba(255,255,255,0.95); border: 1px solid var(--border); border-radius: 20px; padding: 1rem; box-shadow: 0 18px 50px rgba(18, 33, 31, 0.16); }
 .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.55rem; margin-top: 0.85rem; }
 .stat { background: #f5faf8; border-radius: 14px; padding: 0.7rem; }
@@ -85,4 +86,4 @@ h2 { font-size: 1.25rem; }
 .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { z-index: 4; }
 .popup-title { font-weight: 850; font-size: 1rem; margin-bottom: 0.35rem; }
 @media (max-width: 1100px) { .hero, .workspace { grid-template-columns: 1fr; } .status-grid, .insights { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 680px) { .shell { width: min(100% - 0.7rem, 1480px); } .status-grid, .insights { grid-template-columns: 1fr; } .selected-card { position: static; width: auto; border-radius: 0; } #map { height: 540px; } .map-panel { min-height: auto; } }
+@media (max-width: 680px) { .shell { width: min(100% - 0.7rem, 1480px); } .status-grid, .insights { grid-template-columns: 1fr; } .selected-card { position: static; width: auto; border-radius: 0; } #map { position: relative; height: 540px; min-height: 540px; } .map-panel { min-height: auto; } }
